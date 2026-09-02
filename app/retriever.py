@@ -18,12 +18,12 @@ def preprocess(query: str) -> str:
 
 
 def retrieve(
-    query: str, goods_id: Optional[str] = None
+    query: str, goods_id: Optional[str] = None, source: Optional[str] = None
 ) -> Tuple[List[Dict], float]:
     """返回 (top-N 上下文片段, 最高重排分)。"""
     clean_query = preprocess(query)
     candidates = vectorstore.search(
-        clean_query, top_k=settings.VECTOR_TOP_K, goods_id=goods_id
+        clean_query, top_k=settings.VECTOR_TOP_K, goods_id=goods_id, source=source
     )
     if not candidates:
         return [], 0.0

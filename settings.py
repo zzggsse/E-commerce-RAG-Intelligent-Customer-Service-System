@@ -125,6 +125,7 @@ SENSITIVE_WORDS = [
     "身份证号", "银行卡密码", "验证码", "赌博", "私下交易", "刷单", "走私", "毒品",
 ]
 SENSITIVE_REPLY = "抱歉，该问题涉及敏感内容，我不能处理，已为您转接人工客服。"
+NEGATIVE_REPLY = "理解您的心情，这件事情我已为您转接人工客服，尽快为您处理。"
 NO_ANSWER_REPLY = "该问题暂未找到对应资料，请转人工客服为您核实，感谢理解～"
 # 同一会话内，用户重复问相似问题达到此次数则转人工
 REPEAT_QUESTION_LIMIT = int(_env("REPEAT_QUESTION_LIMIT", "3"))
@@ -134,8 +135,20 @@ REPEAT_QUESTION_LIMIT = int(_env("REPEAT_QUESTION_LIMIT", "3"))
 # 8. 服务与数据目录
 # -------------------------------------------------------------
 API_HOST = _env("API_HOST", "0.0.0.0")
-API_PORT = int(_env("API_PORT", "8000"))
+API_PORT = int(_env("API_PORT", "8001"))
 DATA_DIR = _env("DATA_DIR", str(BASE_DIR / "data"))
 LOG_DIR = _env("LOG_DIR", str(BASE_DIR / "logs"))
 STAT_DB_PATH = _env("STAT_DB_PATH", str(BASE_DIR / "logs" / "stat.db"))
 UPLOAD_MAX_MB = int(_env("UPLOAD_MAX_MB", "50"))
+
+# -------------------------------------------------------------
+# 9. 语音输入（ASR 语音识别）
+#     OpenAI 兼容的 /audio/transcriptions 接口（Whisper 系列）。
+#     未配置 ASR_API_KEY 时前端会自动回退到浏览器内置语音识别。
+# -------------------------------------------------------------
+ASR_ENABLED = _env("ASR_ENABLED", "false").lower() == "true"
+ASR_BASE_URL = _env("ASR_BASE_URL", "https://api.openai.com/v1")
+ASR_API_KEY = _env("ASR_API_KEY", "")
+ASR_MODEL = _env("ASR_MODEL", "whisper-1")
+ASR_LANGUAGE = _env("ASR_LANGUAGE", "zh")
+ASR_MAX_AUDIO_MB = int(_env("ASR_MAX_AUDIO_MB", "20"))

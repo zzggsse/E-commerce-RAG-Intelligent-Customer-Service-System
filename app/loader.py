@@ -13,7 +13,7 @@ import settings
 
 logger = logging.getLogger(__name__)
 
-SUPPORTED_SUFFIX = {".md", ".markdown", ".txt", ".pdf"}
+SUPPORTED_SUFFIX = {".md", ".markdown", ".txt", ".pdf", ".docx", ".csv", ".tsv"}
 
 # 需要清洗掉的广告 / 无效内容
 _AD_PATTERNS = [
@@ -33,6 +33,12 @@ def read_file(path: str) -> str:
     suffix = Path(path).suffix.lower()
     if suffix == ".pdf":
         return _read_pdf(path)
+    if suffix == ".docx":
+        return _read_docx(path)
+    if suffix == ".csv":
+        return _read_csv(path)
+    if suffix == ".tsv":
+        return _read_tsv(path)
     return Path(path).read_text(encoding="utf-8", errors="ignore")
 
 
@@ -41,6 +47,64 @@ def _read_pdf(path: str) -> str:
 
     reader = PdfReader(path)
     return "\n".join((page.extract_text() or "") for page in reader.pages)
+
+
+def _read_docx(path: str) -> str:
+    from docx import Document
+
+    doc = Document(path)
+    parts = [p.text for p in doc.paragraphs]
+    for table in doc.tables:
+        for row in table.rows:
+            parts.append(" | ".join(cell.text.strip() for cell in row.cells))
+    return "\n".join(parts).strip()
+
+
+def _read_csv(path: str) -> str:
+    return _read_delimited(path, ",")
+
+
+def _read_tsv(path: str) -> str:
+    return _read_delimited(path, "\t")
+
+
+def _read_delimited(path: str, delimiter: str) -> str:
+    """CSV/TSV: 每行转成 列名：值 的结构化文本，便于按行切块检索。"""
+    import csv
+
+    with open(path, encoding="utf-8-sig", errors="ignore", newline="") as fp:
+        rows = list(csv.reader(fp, delimiter=delimiter))
+    if not rows:
+        return ""
+
+    def is_header(row):
+        return bool(row) and not any(_is_numeric(c) for c in row[: min(3, len(row))])
+
+    header = rows[0] if is_header(rows[0]) else None
+    body = rows[1:] if header else rows
+    out = []
+    for row in body:
+        cells = [c.strip() for c in row]
+        if not any(cells):
+            continue
+        if header:
+            pairs = []
+            for i, cell in enumerate(cells):
+                name = (header[i].strip() if i < len(header) and header[i].strip() else "字段%d" % (i + 1))
+                pairs.append("%s：%s" % (name, cell))
+            out.append("，".join(pairs))
+        else:
+            out.append(" | ".join(cells))
+    return "\n".join(out).strip()
+
+
+def _is_numeric(s: str) -> bool:
+    t = s.strip().replace(",", "").replace("%", "").replace("¥", "").replace("元", "")
+    try:
+        float(t)
+        return True
+    except ValueError:
+        return False
 
 
 # ---------------------------------------------------------------- 清洗

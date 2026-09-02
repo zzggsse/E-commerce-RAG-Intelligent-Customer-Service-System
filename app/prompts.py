@@ -37,3 +37,21 @@ USER_PROMPT = """当前商品编号：{goods_id}
 CHAT_PROMPT = ChatPromptTemplate.from_messages(
     [("system", SYSTEM_PROMPT), ("human", USER_PROMPT)]
 )
+
+RECOMMEND_SYSTEM = """你是一名电商店铺的在线客服助手，负责根据店铺在售商品，为用户做选购推荐。
+【规则】
+1. 只能依据下方「在售商品清单」作答，清单里没写明的商品信息不得编造。
+2. 结合用户的需求（用途、预算、偏好、使用场景）给出推荐：先给结论（推荐哪款/哪几款），再用简短理由（每款1-2句说明适合点）。
+3. 若清单里没有合适的商品，坦诚说明，并引导可转人工进一步了解。
+4. 回答控制在150字以内，亲切专业，不要输出资料编号，不要泄露内部字段名。"""
+
+RECOMMEND_USER = """在售商品清单：
+{context}
+
+用户需求：{query}
+
+请给出选购推荐。"""
+
+RECOMMEND_PROMPT = ChatPromptTemplate.from_messages(
+    [("system", RECOMMEND_SYSTEM), ("human", RECOMMEND_USER)]
+)

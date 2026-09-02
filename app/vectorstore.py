@@ -112,17 +112,20 @@ def insert_chunks(chunks: List[Dict]) -> int:
     return len(rows)
 
 
-def build_filter_expr(goods_id: Optional[str], doc_type: Optional[str] = None) -> str:
+def build_filter_expr(goods_id: Optional[str], doc_type: Optional[str] = None, source: Optional[str] = None) -> str:
     """构造元数据过滤表达式 —— 解决跨商品信息混淆的核心。"""
     if _local():
         from app import local_store
-        return local_store.build_filter_expr(goods_id, doc_type)
+        return local_store.build_filter_expr(goods_id, doc_type, source)
     parts = []
     if goods_id:
         safe = str(goods_id).replace('"', "")
         parts.append(f'(goods_id == "{safe}" or goods_id == "")')
     if doc_type:
         parts.append(f'doc_type == "{doc_type}"')
+    if source:
+        safe_src = str(source).replace('"', "")
+        parts.append(f'source == "{safe_src}"')
     return " and ".join(parts)
 
 
@@ -131,14 +134,15 @@ def search(
     top_k: Optional[int] = None,
     goods_id: Optional[str] = None,
     doc_type: Optional[str] = None,
+    source: Optional[str] = None,
 ) -> List[Dict]:
     if _local():
         from app import local_store
-        return local_store.search(query, top_k, goods_id, doc_type)
+        return local_store.search(query, top_k, goods_id, doc_type, source)
     from app import models
     col = get_collection()
     top_k = top_k or settings.VECTOR_TOP_K
-    expr = build_filter_expr(goods_id, doc_type)
+    expr = build_filter_expr(goods_id, doc_type, source)
     vector = models.embed_query(query)
     results = col.search(
         data=[vector],
@@ -169,12 +173,157 @@ def search(
     return docs
 
 
+def delete_by_source(source: str, goods_id: str = "", doc_type: str = "") -> int:
+    """按来源删除切片：用于文件更新时先删旧的再插入新的。"""
+    if _local():
+        from app import local_store
+        return local_store.delete_by_source(source, goods_id, doc_type)
+    col = get_collection()
+    parts = ['source == "%s"' % source.replace('"', '\\"')]
+    if goods_id:
+        parts.append('goods_id == "%s"' % goods_id.replace('"', '\\"'))
+    if doc_type:
+        parts.append('doc_type == "%s"' % doc_type.replace('"', '\\"'))
+    expr = " and ".join(parts)
+    try:
+        res = col.delete(expr)
+        return res.delete_count if hasattr(res, "delete_count") else len(res or [])
+    except Exception as exc:
+        logger.warning("按源删除失败: %s", exc)
+        return 0
+
+def list_sources() -> List[Dict]:
+    """按来源聚合列出知识库中的文档：source / doc_type / goods_id / 切片数。"""
+    if _local():
+        from app import local_store
+        return local_store.list_sources()
+    col = get_collection()
+    rows = col.query(expr="", output_fields=["source", "doc_type", "goods_id"], limit=16384)
+    agg = {}
+    for r in rows:
+        key = (r.get("source", "") or "", r.get("doc_type", "") or "", r.get("goods_id", "") or "")
+        agg[key] = agg.get(key, 0) + 1
+    out = [
+        {"source": k[0], "doc_type": k[1], "goods_id": k[2], "chunk_count": v}
+        for k, v in agg.items()
+    ]
+    out.sort(key=lambda x: x["source"])
+    return out
+
+
+def search_content(
+    keyword: str,
+    goods_id: str = "",
+    doc_type: str = "",
+    limit: int = 200,
+) -> List[Dict]:
+    """按关键词在内容/来源名中检索切片，用于知识库管理页快速定位要删的内容。"""
+    if _local():
+        from app import local_store
+        return local_store.search_content(keyword, goods_id, doc_type, limit)
+    kw = (keyword or "").strip()
+    if not kw:
+        return []
+    col = get_collection()
+    expr = '(content like "%%%s%%" or source like "%%%s%%")' % (kw.replace('"', '\\"'), kw.replace('"', '\\"'))
+    if goods_id:
+        expr += ' and (goods_id == "%s" or goods_id == "")' % goods_id.replace('"', '\\"')
+    if doc_type:
+        expr += ' and doc_type == "%s"' % doc_type.replace('"', '\\"')
+    try:
+        rows = col.query(
+            expr=expr,
+            output_fields=["source", "doc_type", "goods_id", "content", "chunk_index"],
+            limit=limit,
+        )
+    except Exception as exc:
+        logger.warning("内容检索失败: %s", exc)
+        return []
+    out = []
+    for r in rows:
+        out.append({
+            "source": r.get("source", ""),
+            "doc_type": r.get("doc_type", ""),
+            "goods_id": r.get("goods_id", ""),
+            "content": r.get("content", ""),
+            "chunk_index": int(r.get("chunk_index", 0)),
+        })
+    return out
+
+
+def delete_by_content_hash(
+    doc_hash: str,
+    goods_id: str = "",
+    doc_type: str = "",
+) -> List[Dict]:
+    """按内容指纹识别旧副本并删除（解决改名/重复上传的自动替换合并）。
+    对每个来源（同一 source+goods_id+doc_type）按 chunk_index 拼接出指纹，
+    指纹与目标一致则整个来源删除。返回被删除的来源列表。"""
+    if _local():
+        from app import local_store
+        return local_store.delete_by_content_hash(doc_hash, goods_id, doc_type)
+    from app import fingerprint
+    col = get_collection()
+    rows = col.query(
+        expr="", output_fields=["source", "doc_type", "goods_id", "content", "chunk_index"],
+        limit=16384,
+    )
+    groups = {}
+    for r in rows:
+        if doc_type and (r.get("doc_type") or "") != doc_type:
+            continue
+        if goods_id and (r.get("goods_id") or "") not in (goods_id, ""):
+            continue
+        key = (r.get("source") or "", r.get("goods_id") or "", r.get("doc_type") or "")
+        groups.setdefault(key, []).append((int(r.get("chunk_index", 0)), r.get("content", "")))
+    deleted = []
+    for (src, gid, dt), items in groups.items():
+        items.sort(key=lambda x: x[0])
+        fp = fingerprint.content_hash(c for _, c in items)
+        if fp == doc_hash:
+            n = delete_by_source(src, gid, dt)
+            deleted.append({"source": src, "goods_id": gid, "doc_type": dt, "chunk_count": n})
+    if deleted:
+        logger.info("按内容指纹替换旧副本 %d 份(hash=%s...)", len(deleted), doc_hash[:8])
+    return deleted
+
+
+def product_catalog(limit_each: int = 60000) -> List[Dict]:
+    """汇总所有商品的简介（每个来源取首个片段），用于「选购/推荐」类问题兜底。"""
+    if _local():
+        from app import local_store
+        return local_store.product_catalog(limit_each)
+    col = get_collection()
+    rows = col.query(
+        expr='(doc_type == "goods" or goods_id != "")',
+        output_fields=["source", "goods_id", "content", "chunk_index"],
+        limit=16384,
+    )
+    groups = {}
+    for r in rows:
+        key = (r.get("source") or "", r.get("goods_id") or "")
+        groups.setdefault(key, []).append((int(r.get("chunk_index", 0)), r.get("content", "")))
+    out = []
+    for (src, gid), items in groups.items():
+        items.sort(key=lambda x: x[0])
+        # 汇总该商品全部片段的完整文本，用于「选购/推荐」按方面打分
+        full = "\n".join(str(it[1]) for it in items if it[1])
+        out.append({"source": src, "goods_id": gid, "content": full[:limit_each]})
+    out.sort(key=lambda x: (x["goods_id"], x["source"]))
+    return out
+
+
 def count() -> int:
     if _local():
         from app import local_store
         return local_store.count()
     col = get_collection()
-    return col.num_entities
+    try:
+        # num_entities 在删除后会滞后（残留 tombstone），改为统计实际行数
+        rows = col.query(expr="", output_fields=["pk"], limit=16384)
+        return len(rows)
+    except Exception:
+        return col.num_entities
 
 
 def drop_collection() -> None:

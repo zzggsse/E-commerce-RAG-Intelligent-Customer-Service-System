@@ -9,7 +9,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="repla
 
 import requests
 
-URL = "http://127.0.0.1:8000"
+URL = "http://127.0.0.1:8001"
 
 
 def call(path, payload=None, method="post"):

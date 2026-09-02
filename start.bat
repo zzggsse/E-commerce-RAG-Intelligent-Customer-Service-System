@@ -105,29 +105,32 @@ if not exist ".venv\.deps_ok" (
     echo [4/5] 依赖已安装，跳过。
 )
 
-REM ---------- 4. 首次导入示例知识库 ----------
+REM ---------- 4. 初始化知识库（不内置示例） ----------
 if not exist "logs\.ingested" (
-    echo [5/5] 首次运行：下载模型并导入 data 目录知识库（模型约 1.3GB，请耐心等待）...
-    python -m scripts.init_kb
+    echo [5/5] 初始化空知识库（默认不内置任何测试数据）...
+    python -m scripts.ensure_kb
     if errorlevel 1 (
-        echo [警告] 知识库导入失败，服务仍会启动，可稍后调用 /document/ingest_dir 重试。
+        echo [警告] 知识库初始化失败，请确认 Docker 与 Milvus 已启动。
     ) else (
         if not exist "logs" mkdir logs
         echo ok > "logs\.ingested"
     )
+    echo        当前知识库为空，可选：
+    echo          - 运行 generate_test_data.bat 一键生成测试内容
+    echo          - 在知识库管理页直接上传自己的文档
 ) else (
-    echo [5/5] 知识库已初始化，跳过导入。
+    echo [5/5] 知识库已初始化，跳过。
 )
 
 echo.
 echo ============================================
 echo   启动 API 服务
-echo   接口文档: http://127.0.0.1:8000/docs
+echo   接口文档: http://127.0.0.1:8001/docs
 echo   按 Ctrl+C 停止服务
 echo ============================================
 echo.
-start "" http://127.0.0.1:8000/docs
-python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+start "" http://127.0.0.1:8001/docs
+python -m uvicorn app.main:app --host 0.0.0.0 --port 8001
 
 pause
 

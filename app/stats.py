@@ -93,6 +93,11 @@ def log_doc(source: str, doc_type: str, goods_id: str, chunk_count: int) -> None
         logger.warning("写入文档统计失败: %s", exc)
 
 
+def clear() -> int:
+    """清空问答统计（qa_log），用于让面板从实际开始重新累计。"""
+    with _lock, _conn() as conn:
+        return conn.execute("DELETE FROM qa_log").rowcount
+
 def summary(days: int = 7) -> Dict:
     since = int(time.time()) - days * 86400
     with _lock, _conn() as conn:

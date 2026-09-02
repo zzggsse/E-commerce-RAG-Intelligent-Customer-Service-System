@@ -11,7 +11,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 import requests
 
-URL = "http://127.0.0.1:8000"
+URL = "http://127.0.0.1:8001"
 # (场景, 问题, goods_id, 期望标记)
 EVAL_CASES = [
     ("商品问答", "这个耳机能续航多久？", "G10086", "ok"),

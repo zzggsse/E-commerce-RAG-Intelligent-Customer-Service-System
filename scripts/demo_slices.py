@@ -5,7 +5,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 import requests
 
-URL = "http://127.0.0.1:8000"
+URL = "http://127.0.0.1:8001"
 
 def call(path, payload=None, method="post"):
     t = time.time()
